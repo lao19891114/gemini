@@ -2,14 +2,14 @@ import streamlit as st
 import google.generativeai as genai
 import os
 
-# 页面基础设置
-st.set_page_config(page_title="Gemini 私人空间", page_icon="🌙")
-st.title("Gemini 3 Pro - 沉浸式写作 (CN直连版)")
+# 页面配置
+st.set_page_config(page_title="Gemini 沉浸式空间", page_icon="🌌", layout="wide")
 
-# 从环境变量获取 Key (适配 Zeabur)
+# 标题
+st.title("🌌 Gemini 3 - 沉浸式解压终端")
+
+# 1. 获取 API Key
 api_key = os.getenv("GOOGLE_API_KEY")
-
-# 如果本地测试没有环境变量，尝试从 Streamlit Secrets 获取（兼容 Streamlit Cloud）
 if not api_key:
     try:
         api_key = st.secrets["GOOGLE_API_KEY"]
@@ -17,13 +17,37 @@ if not api_key:
         pass
 
 if not api_key:
-    st.error("请配置 API Key！(在 Zeabur 的 Variables 中添加 GOOGLE_API_KEY)")
+    st.error("❌ 未检测到 API Key，请在 Zeabur 环境变量中配置 GOOGLE_API_KEY")
     st.stop()
 
-# 配置 API
+# 2. 配置 API Key
 genai.configure(api_key=api_key)
 
-# 【核心】暴力解锁安全设置 (Block None)
+# 3. 侧边栏：核心控制台
+with st.sidebar:
+    st.header("🎮 控制台")
+    
+    # --- 模型选择器 (关键更新) ---
+    selected_model = st.selectbox(
+        "选择你的 AI 伴侣:",
+        [
+            "gemini-3-flash-preview",  # 【首选】最新一代 Flash，速度快，智商高，抗拒低
+            "gemini-2.5-flash",        # 【稳妥】经典款，写文非常顺手
+            "gemini-3-pro-preview",    # 【深度】最新一代 Pro，文笔最强，但可能爱说教
+            "gemini-2.5-pro",          # 【怀旧】上一代 Pro
+        ],
+        index=0, # 默认选中第一个 (3 Flash)
+        help="推荐使用 Flash 系列，速度快且更听话。Pro 系列适合写复杂的长篇大论。"
+    )
+    
+    # --- 参数调节 ---
+    temperature = st.slider("创造力 (Temperature)", 0.0, 2.0, 1.2, help="越高越疯，越低越严谨。写文建议 1.0 以上。")
+    
+    if st.button("🗑️ 清空记忆 (重开)"):
+        st.session_state.messages = []
+        st.rerun()
+
+# 4. 暴力解锁安全设置 (这是写解压文的关键)
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -31,42 +55,18 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# 初始化模型函数
-def get_model(model_name):
-    generation_config = {
-        "temperature": 1.0, # 稍微调高，增加创造性
-        "max_output_tokens": 8192,
-    }
-    return genai.GenerativeModel(
-        model_name=model_name,
-        generation_config=generation_config,
-        safety_settings=safety_settings
-    )
-
-# 聊天界面逻辑
+# 5. 初始化聊天记录
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 侧边栏：选择模型
-with st.sidebar:
-    st.header("模型选择")
-    selected_model = st.selectbox(
-        "选择你的写手:",
-        ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"],
-        index=0
-    )
-    st.info("💡 提示：Flash 速度最快且阻力最小；Pro 文笔更好但可能被拒。")
-    if st.button("清空对话"):
-        st.session_state.messages = []
-        st.rerun()
-
-# 显示历史消息
+# 6. 显示历史消息
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 处理输入
-if prompt := st.chat_input("输入剧情指令..."):
+# 7. 处理用户输入
+if prompt := st.chat_input("输入剧情指令... (例如：继续，详细描写...)"):
+    
     # 显示用户消息
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -74,26 +74,35 @@ if prompt := st.chat_input("输入剧情指令..."):
 
     # 生成回复
     with st.chat_message("assistant"):
-        status_placeholder = st.empty()
-        status_placeholder.markdown("正在构思中...")
-        
+        status_box = st.empty()
+        status_box.markdown(f"⚡ {selected_model} 正在构思...")
+
         try:
-            # 尝试加载选中的模型
-            model = get_model(selected_model)
-            
-            # 构建历史记录
+            # 动态加载用户选中的模型
+            model = genai.GenerativeModel(
+                model_name=selected_model,
+                generation_config={
+                    "temperature": temperature, 
+                    "max_output_tokens": 8192
+                },
+                safety_settings=safety_settings
+            )
+
+            # 构建历史上下文
             history = [
                 {"role": m["role"], "parts": [m["content"]]} 
-                for m in st.session_state.messages 
+                for m in st.session_state.messages
                 if m["role"] != "system"
             ]
-            
+
             # 发送请求
             chat = model.start_chat(history=history[:-1])
             response = chat.send_message(prompt)
             
-            status_placeholder.markdown(response.text)
+            # 显示结果
+            status_box.markdown(response.text)
             st.session_state.messages.append({"role": "model", "content": response.text})
-            
+
         except Exception as e:
-            status_placeholder.error(f"生成失败: {e}\n\n建议：尝试在侧边栏切换回 Flash 模型，那个抗拒更少。")
+            status_box.error(f"⚠️ 生成失败: {e}")
+            st.info("💡 建议：如果遇到 404 错误，说明该模型在此地区不可用，请在左侧尝试切换其他模型（如 2.5 Flash）。")
