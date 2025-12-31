@@ -2,6 +2,13 @@ import streamlit as st
 import google.generativeai as genai
 import os
 
+# --- 诊断代码 (放在最前面) ---
+try:
+    st.warning(f"当前驱动版本: {genai.__version__}")
+except:
+    st.error("驱动版本过低，无法读取版本号")
+# ---------------------------
+
 # --- 1. 页面配置 ---
 st.set_page_config(page_title="Gemini 全能终端", page_icon="🧬", layout="wide")
 st.title("🌌 Gemini - 沉浸式解压沙箱 (全模型版)")
